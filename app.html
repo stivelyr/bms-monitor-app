@@ -5,75 +5,200 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BMS Monitor — Haitai Battery BLE</title>
 <style>
-  :root { color-scheme: dark; --bg:#0f1419; --card:#1c2430; --line:#2d3b4c; --ok:#7ee787; --warn:#f0b429; --bad:#f4796b; --txt:#e6edf3; --dim:#8b98a9; }
-  * { box-sizing:border-box; }
-  body { font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); margin:0; padding:1rem; line-height:1.45; }
-  main { max-width: 760px; margin: 0 auto; }
-  h1 { font-size:1.25rem; margin:.2rem 0 1rem; }
-  h2 { font-size:.95rem; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; margin:1.4rem 0 .5rem; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.6rem; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.7rem .85rem; }
-  .card .k { font-size:.72rem; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; }
-  .card .v { font-size:1.45rem; font-weight:600; font-variant-numeric:tabular-nums; }
-  .card .u { font-size:.8rem; color:var(--dim); font-weight:400; }
-  .soc .v { color:var(--ok); }
-  .bar { height:6px; background:var(--line); border-radius:3px; margin-top:.5rem; overflow:hidden; }
-  .bar > i { display:block; height:100%; background:var(--ok); width:0%; transition:width .4s; }
-  .status { display:inline-block; padding:.15em .6em; border-radius:99px; font-size:.8rem; font-weight:600; }
-  .st-static { background:#23408a; } .st-moving { background:#2d6a39; } .st-sleep { background:#5a4a17; }
-  table { border-collapse:collapse; width:100%; font-size:.85rem; }
-  th,td { border:1px solid var(--line); padding:.35em .55em; text-align:left; font-variant-numeric:tabular-nums; }
-  th { background:var(--card); color:var(--dim); font-weight:500; }
-  .faults { display:flex; flex-wrap:wrap; gap:.4rem; min-height:1.6rem; }
-  .fault { background:#3d1f1c; color:var(--bad); border:1px solid #6b2e28; padding:.15em .6em; border-radius:99px; font-size:.78rem; }
-  .none { color:var(--dim); font-size:.85rem; }
-  .ctrls { display:flex; flex-wrap:wrap; gap:.5rem; }
-  button { background:var(--card); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:.55em .9em; font-size:.85rem; cursor:pointer; }
-  button:hover { border-color:var(--dim); }
-  .raw { font-family:ui-monospace,monospace; font-size:.72rem; color:var(--dim); background:var(--card); border:1px solid var(--line); border-radius:8px; padding:.6rem; overflow-x:auto; white-space:pre; }
-  .conn { display:flex; align-items:center; gap:.5rem; margin-bottom:1rem; }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); box-shadow:0 0 6px var(--ok); }
-  .dot.sim { background:var(--warn); box-shadow:0 0 6px var(--warn); }
-  footer { margin-top:1.6rem; font-size:.75rem; color:var(--dim); }
-  footer a { color:inherit; }
+  /* ---- Design tokens: "field instrument" direction ---- */
+  :root {
+    color-scheme: dark;
+    --bg: #0f141a;
+    --surface: #161d26;
+    --surface-2: #1d2632;
+    --text: #e8edf2;
+    --heading: #f2f7fb;
+    --muted: #8fa0b3;
+    --accent: #4ade80;
+    --accent-dim: #1c3a2a;
+    --warn: #f0b429;
+    --bad: #f4796b;
+    --border: #2a3542;
+    --radius: 6px;
+    --radius-sm: 4px;
+    --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-2: 0 6px 24px rgba(0,0,0,.35);
+    --font: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-8: 48px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: 14px; line-height: 1.5;
+    padding: var(--sp-5) var(--sp-4) var(--sp-8);
+  }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { color: var(--heading); font-size: 1.35rem; letter-spacing: -0.02em; margin: var(--sp-1) 0 var(--sp-2); }
+  h2 {
+    color: var(--muted); font-size: .72rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .12em;
+    margin: var(--sp-6) 0 var(--sp-3);
+    display: flex; align-items: baseline; gap: var(--sp-2);
+  }
+  h2 .frame { color: var(--accent); font-weight: 400; letter-spacing: 0; }
+  .eyebrow {
+    color: var(--accent); font-size: .72rem; text-transform: uppercase; letter-spacing: .16em;
+  }
+  .lede { color: var(--muted); max-width: 60ch; margin: 0 0 var(--sp-5); }
+  .lede code { color: var(--text); }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-1); padding: var(--sp-4);
+  }
+
+  /* ---- Signal panel ---- */
+  .signal { display: grid; gap: var(--sp-3); grid-template-columns: 1fr; }
+  @media (min-width: 640px) { .signal { grid-template-columns: 1fr auto; align-items: center; } }
+  .sig-meta { display: flex; flex-wrap: wrap; gap: var(--sp-3) var(--sp-5); }
+  .sig-item .k { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; }
+  .sig-item .v { font-variant-numeric: tabular-nums; }
+  .sig-item .v.ok { color: var(--accent); }
+  .sig-item .v.warn { color: var(--warn); }
+  .sig-item .v.bad { color: var(--bad); }
+  .conn-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: var(--muted); }
+  .conn-dot.streaming { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
+  .conn-dot.connecting { background: var(--warn); animation: pulse 1s infinite; }
+  .conn-dot.error { background: var(--bad); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .conn-dot { animation: none !important; } .bar > i, .cellbar > i { transition: none !important; } }
+
+  button {
+    font: inherit; color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: .55em 1em; cursor: pointer; min-height: 44px;
+    transition: border-color 140ms ease-out, background 140ms ease-out;
+  }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:active { background: var(--accent-dim); }
+  button:disabled { color: var(--muted); cursor: not-allowed; border-color: var(--border); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #06240f; font-weight: 700; }
+  .btn-primary:hover { background: #6be89b; }
+  .btn-ghost { min-height: 0; padding: .3em .7em; font-size: .75rem; }
+
+  /* ---- Telemetry strip ---- */
+  .strip { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-3); }
+  @media (min-width: 640px) { .strip { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 860px) { .strip { grid-template-columns: repeat(6, 1fr); } }
+  .metric .v { font-size: 1.5rem; color: var(--heading); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .metric .u { color: var(--muted); font-size: .75rem; }
+  .bar, .cellbar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-top: var(--sp-2); }
+  .bar > i, .cellbar > i { display: block; height: 100%; background: var(--accent); width: 0%; transition: width 300ms ease-out; }
+  .bar.warn > i { background: var(--warn); }
+  .chip {
+    display: inline-block; padding: .15em .6em; border-radius: 99px;
+    font-size: .75rem; font-weight: 700; letter-spacing: .04em;
+  }
+  .chip-static { background: var(--accent-dim); color: var(--accent); }
+  .chip-sleep { background: #4a3d14; color: var(--warn); }
+  .cadence { color: var(--muted); font-size: .75rem; margin-top: var(--sp-2); }
+
+  /* ---- Cells ---- */
+  .cellgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--sp-2); }
+  .cell { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-2) var(--sp-3); }
+  .cell .n { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; }
+  .cell .mv { font-variant-numeric: tabular-nums; color: var(--heading); }
+  .cell .mv.hi { color: var(--warn); }
+  .cell .mv.lo { color: var(--bad); }
+  .cellbar { margin-top: var(--sp-1); }
+  .cell-empty { color: var(--muted); }
+
+  /* ---- Faults / control / raw ---- */
+  .faults { display: flex; flex-wrap: wrap; gap: var(--sp-2); min-height: 1.8rem; }
+  .fault { background: #3d1f1c; color: var(--bad); border: 1px solid #6b2e28; padding: .15em .6em; border-radius: 99px; font-size: .75rem; }
+  .none { color: var(--muted); }
+  .ctrls { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+  .warning {
+    border: 1px solid #6b5a1e; background: #2b240f; color: var(--warn);
+    border-radius: var(--radius-sm); padding: var(--sp-2) var(--sp-3);
+    font-size: .78rem; margin-bottom: var(--sp-3);
+  }
+  .lastwrite { font-size: .8rem; color: var(--accent); min-height: 1.3em; margin: var(--sp-3) 0 0; }
+  .raw {
+    background: #0b0f14; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: var(--sp-3); font-size: .72rem; color: var(--muted);
+    overflow-x: auto; white-space: pre; box-shadow: var(--shadow-2);
+  }
+  .banner-error {
+    display: none; border: 1px solid #6b2e28; background: #33150f; color: var(--bad);
+    border-radius: var(--radius); padding: var(--sp-3); margin-top: var(--sp-3);
+    align-items: center; justify-content: space-between; gap: var(--sp-3);
+  }
+  .banner-error.show { display: flex; }
+  footer { margin-top: var(--sp-6); font-size: .75rem; color: var(--muted); }
+  footer a { color: inherit; }
 </style>
 </head>
 <body>
 <main>
-<h1>BMS Monitor</h1>
-<div class="conn"><span class="dot sim"></span><span id="connlabel">Simulated BLE link — service 0x8900</span></div>
+  <span class="eyebrow">BMS Monitor · Haitai BLE</span>
+  <h1>Live pack telemetry, byte-exact</h1>
+  <p class="lede">Connect over GATT, stream the <code>0x8902</code> telemetry frames, and read cell voltages, temperature and MOS state — every value traced to the protocol source in <code>reference/gatt/</code>.</p>
 
-<div class="cards">
-  <div class="card"><div class="k">Voltage</div><div class="v" id="voltage">—</div><div class="u">V</div></div>
-  <div class="card"><div class="k">Current</div><div class="v" id="current">—</div><div class="u">A</div></div>
-  <div class="card soc"><div class="k">SOC</div><div class="v" id="soc">—</div><div class="u">%</div><div class="bar"><i id="socbar"></i></div></div>
-  <div class="card"><div class="k">SOH</div><div class="v" id="soh">—</div><div class="u">%</div></div>
-  <div class="card"><div class="k">Temp</div><div class="v" id="temp">—</div><div class="u">°C</div></div>
-  <div class="card"><div class="k">Status</div><div class="v" id="status" style="font-size:1rem"><span class="status st-static">—</span></div></div>
-</div>
+  <!-- Signal panel -->
+  <section class="panel signal" aria-label="Connection">
+    <div class="sig-meta">
+      <div class="sig-item"><span class="k">Link</span><br><span class="conn-dot" id="dot"></span> <span class="v" id="gattstate">idle</span></div>
+      <div class="sig-item"><span class="k">RSSI</span><br><span class="v" id="rssi">—</span></div>
+      <div class="sig-item"><span class="k">Handshake 0x8901</span><br><span class="v" id="hs">—</span></div>
+      <div class="sig-item"><span class="k">Timeouts</span><br><span class="v" id="to">connect 10s · op 5s</span></div>
+    </div>
+    <button class="btn-primary" id="connectbtn">Connect to pack</button>
+  </section>
+  <div class="banner-error" id="errbanner" role="alert">
+    <span id="errmsg">Link lost — no telemetry for 5 s.</span>
+    <button class="btn-ghost" id="retrybtn">Retry</button>
+  </div>
 
-<h2>Cells (0x8903–07)</h2>
-<table id="cellstable"><thead><tr><th>Cell</th><th>Raw</th></tr></thead><tbody></tbody></table>
+  <!-- Telemetry strip -->
+  <h2>Telemetry <span class="frame">0x8902</span></h2>
+  <section class="panel" aria-label="Telemetry">
+    <div class="strip">
+      <div class="metric"><div class="k muted">Voltage</div><div class="v" id="voltage">—</div><span class="u">V</span></div>
+      <div class="metric"><div class="k muted">Current</div><div class="v" id="current">—</div><span class="u">A</span></div>
+      <div class="metric"><div class="k muted">SOC</div><div class="v" id="soc">—</div><span class="u">%</span><div class="bar" id="socbarwrap"><i id="socbar"></i></div></div>
+      <div class="metric"><div class="k muted">SOH</div><div class="v" id="soh">—</div><span class="u">%</span></div>
+      <div class="metric"><div class="k muted">Temp</div><div class="v" id="temp">—</div><span class="u">°C</span></div>
+      <div class="metric"><div class="k muted">Status</div><div class="v" id="status" style="font-size:1rem"><span class="chip chip-static">—</span></div></div>
+    </div>
+    <div class="cadence" id="cadence">Not streaming. Frames refresh every 1 s while connected.</div>
+  </section>
 
-<h2>Faults (0x8905/06)</h2>
-<div class="faults" id="faults"><span class="none">none</span></div>
+  <!-- Cells -->
+  <h2>Cell voltages <span class="frame">0x8903–07</span></h2>
+  <div class="cellgrid" id="cells" aria-live="polite"><span class="cell-empty">No cell data — connect to a pack to populate the 15-cell strip.</span></div>
 
-<h2>Control writes → 0x8910</h2>
-<div class="ctrls">
-  <button data-cmd="11010B">Charge MOS on</button>
-  <button data-cmd="11010A">Charge MOS off</button>
-  <button data-cmd="12010B">MOS on</button>
-  <button data-cmd="12010A">MOS off</button>
-  <button data-cmd="13010B">Buzzer on</button>
-  <button data-cmd="13010A">Buzzer off</button>
-  <button data-cmd="10010A">Sleep</button>
-</div>
-<p class="none" id="lastwrite" style="font-size:.8rem"></p>
+  <!-- Faults -->
+  <h2>Faults <span class="frame">0x8905/06</span></h2>
+  <div class="faults" id="faults"><span class="none">none</span></div>
 
-<h2>Last frames</h2>
-<div class="raw" id="raw">waiting…</div>
+  <!-- Control bay -->
+  <h2>Control writes <span class="frame">→ 0x8910</span></h2>
+  <section class="panel" aria-label="Control">
+    <div class="warning">Hardware-validation warning: SetPowerSwitch and DischargeMos both map to <code>12 01 …</code> in the recovered dispatcher — unverified on a real pack. Charge MOS (<code>11</code>), buzzer (<code>13</code>) and sleep (<code>10</code>) are confidently mapped.</div>
+    <div class="ctrls" id="ctrls">
+      <button data-cmd="11010B">Charge MOS on</button>
+      <button data-cmd="11010A">Charge MOS off</button>
+      <button data-cmd="12010B">MOS on</button>
+      <button data-cmd="12010A">MOS off</button>
+      <button data-cmd="13010B">Buzzer on</button>
+      <button data-cmd="13010A">Buzzer off</button>
+      <button data-cmd="10010A">Sleep</button>
+    </div>
+    <p class="lastwrite" id="lastwrite" aria-live="polite"></p>
+  </section>
 
-<footer>Handshake: notify on 0x8901 → write 17×0xFF → expect response[0]==0x00. Frame layouts per decompiled Swap Assistant sources in <a href="https://github.com/none">reference/gatt/</a>. Control bytes not hardware-validated (SetPowerSwitch/DischargeMos collision).</footer>
+  <h2>Raw frames</h2>
+  <div class="raw" id="raw">waiting for connect…</div>
+
+  <footer>Handshake: notify on 0x8901 → write 17×0xFF → expect response[0]==0x00. Frame layouts per decompiled Swap Assistant sources in reference/gatt/. Control bytes not hardware-validated (SetPowerSwitch/DischargeMos collision). <button class="btn-ghost" id="dropbtn">Simulate link drop</button></footer>
 </main>
 
 <script>
@@ -131,8 +256,7 @@ function simCells(t) {
   for (let i = 0; i < 15; i++) cells.push(base + Math.round(Math.sin(i * 2.3 + t) * 4));
   const frames = [];
   for (let f = 0; f < 2; f++) {
-    const b = new Array(20).fill(0xFF >> 8); // 0xFF fill
-    for (let i = 0; i < 20; i++) b[i] = 0xFF;
+    const b = new Array(20).fill(0xFF);
     for (let i = 0; i < 10; i++) {
       const v = cells[f * 10 + i];
       if (v === undefined) continue;
@@ -152,43 +276,114 @@ function simFaults(t) {
 const $ = id => document.getElementById(id);
 function hex(b) { return b.map(x => x.toString(16).padStart(2, '0')).join(' '); }
 function statusChip(s) {
-  const names = ['st-moving', 'st-static', 'st-static', 'st-sleep', 'st-sleep'];
-  return `<span class="status ${names[s] || 'st-static'}">${STATUS_NAMES[s] || 'Unknown ' + s}</span>`;
+  const cls = (s === 3 || s === 4) ? 'chip-sleep' : 'chip-static';
+  return `<span class="chip ${cls}">${STATUS_NAMES[s] || 'Unknown ' + s}</span>`;
 }
+
+let state = 'idle'; // idle | connecting | streaming | error
+let tick = 0;
+let timer = null;
+
+function setDot(cls, label) {
+  $('dot').className = 'conn-dot ' + cls;
+  $('gattstate').textContent = label;
+  $('gattstate').className = 'v ' + (cls === 'streaming' ? 'ok' : cls === 'error' ? 'bad' : cls === 'connecting' ? 'warn' : '');
+}
+
+async function connect() {
+  state = 'connecting';
+  $('connectbtn').disabled = true;
+  $('errbanner').classList.remove('show');
+  // Simulated GATT sequence with the real timeout budget (connect 10s, ops 5s)
+  setDot('connecting', 'scanning…');
+  await step(600); setGatt('connecting', 'connecting (≤10 s)…');
+  await step(600); setGatt('connecting', 'discover services…');
+  await step(500); setGatt('connecting', 'handshake 17×0xFF…');
+  await step(500);
+  state = 'streaming';
+  setDot('streaming', 'streaming · 0x8900');
+  $('hs').textContent = 'ACK 0x00';
+  $('hs').className = 'v ok';
+  $('connectbtn').textContent = 'Disconnect';
+  $('connectbtn').disabled = false;
+  $('cadence').textContent = 'Streaming · frames refresh every 1 s · 0x8902/03/04/05-06.';
+  startStream();
+}
+function setGatt(_, label) { $('gattstate').textContent = label; $('gattstate').className = 'v warn'; }
+function step(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function disconnect() {
+  state = 'idle';
+  clearInterval(timer); timer = null;
+  setDot('', 'idle');
+  $('hs').textContent = '—'; $('hs').className = 'v';
+  $('connectbtn').textContent = 'Connect to pack';
+  $('connectbtn').disabled = false;
+  $('cadence').textContent = 'Not streaming. Frames refresh every 1 s while connected.';
+}
+
+function dropLink() {
+  clearInterval(timer); timer = null;
+  state = 'error';
+  setDot('error', 'link lost');
+  $('errbanner').classList.add('show');
+  $('connectbtn').disabled = false;
+  $('connectbtn').textContent = 'Connect to pack';
+}
+
+$('connectbtn').addEventListener('click', () => {
+  if (state === 'streaming') disconnect();
+  else if (state !== 'connecting') connect();
+});
+$('retrybtn').addEventListener('click', connect);
+$('dropbtn').addEventListener('click', dropLink);
+
+function startStream() {
+  render(++tick);
+  timer = setInterval(() => render(++tick), 1000);
+}
+
 let cellIndex = 0;
 function render(t) {
-  const m = decodeMain(simMain(t));
+  const mainFrame = simMain(t);
+  const m = decodeMain(mainFrame);
   $('voltage').textContent = m.voltage.toFixed(2);
   const cur = $('current'); cur.textContent = m.current.toFixed(2);
-  cur.style.color = m.current < -0.2 ? 'var(--warn)' : 'var(--ok)';
+  cur.style.color = m.current < -0.2 ? 'var(--warn)' : 'var(--heading)';
   $('soc').textContent = m.soc;
   $('socbar').style.width = m.soc + '%';
+  $('socbarwrap').classList.toggle('warn', m.soc < 25);
   $('soh').textContent = m.soh;
   $('temp').textContent = m.temp;
   $('status').innerHTML = statusChip(m.status);
 
-  const cells = decodeCells(simCells(t)[0]).concat(decodeCells(simCells(t)[1]));
+  const frames = simCells(t);
+  const cells = decodeCells(frames[0]).concat(decodeCells(frames[1]));
   cellIndex = cells.length;
-  const tb = $('cellstable').querySelector('tbody');
-  tb.innerHTML = cells.map((v, i) => `<tr><td>Cell ${i + 1}</td><td>${v}</td></tr>`).join('');
+  const min = Math.min(...cells), max = Math.max(...cells), span = Math.max(max - min, 1);
+  $('cells').innerHTML = cells.map((v, i) => {
+    const cls = v === max && max - min > 15 ? 'hi' : v === min && max - min > 15 ? 'lo' : '';
+    const pct = Math.round(((v - min) / span) * 100);
+    return `<div class="cell"><span class="n">Cell ${String(i + 1).padStart(2, '0')}</span><br><span class="mv ${cls}">${v} mV</span><div class="cellbar"><i style="width:${pct}%"></i></div></div>`;
+  }).join('');
 
   const faults = decodeFaults(simFaults(t));
   $('faults').innerHTML = faults.length ? faults.map(f => `<span class="fault">${f}</span>`).join('') : '<span class="none">none</span>';
 
+  $('rssi').textContent = (-52 - (t % 7)) + ' dBm';
+  $('rssi').className = 'v ' + (t % 7 > 4 ? 'warn' : 'ok');
+
   $('raw').textContent =
-    `0x8902 ${hex(simMain(t))}\n` +
-    `0x8903 ${hex(simCells(t)[0])}\n` +
-    `0x8904 ${hex(simCells(t)[1])}\n` +
+    `0x8902    ${hex(mainFrame)}\n` +
+    `0x8903    ${hex(frames[0])}\n` +
+    `0x8904    ${hex(frames[1])}\n` +
     `0x8905/06 ${hex(simFaults(t))}`;
 }
-let tick = 0;
-render(0);
-setInterval(() => render(++tick), 1000);
 
-document.querySelectorAll('.ctrls button').forEach(btn => {
+document.querySelectorAll('#ctrls button').forEach(btn => {
   btn.addEventListener('click', () => {
     const cmd = btn.dataset.cmd;
-    $('lastwrite').textContent = `→ write 0x8910: ${cmd.match(/../g).join(' ')} (${btn.textContent})`;
+    $('lastwrite').textContent = `→ write 0x8910: ${cmd.match(/../g).join(' ')}  (${btn.textContent})`;
   });
 });
 </script>
