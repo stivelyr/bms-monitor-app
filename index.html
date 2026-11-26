@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Haitai Battery BLE Protocol Reference</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, sans-serif; background:#0f1419; color:#e6edf3; margin:0; padding:2rem; line-height:1.5; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; } h2 { font-size: 1.1rem; margin-top: 2rem; color:#7ee787; }
+  code { background:#1c2430; padding:.15em .4em; border-radius:4px; font-size:.9em; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .92rem; }
+  th, td { border: 1px solid #2d3b4c; padding: .45em .6em; text-align: left; }
+  th { background:#1c2430; }
+</style>
+</head>
+<body>
+<main>
+<h1>Haitai Battery BLE Protocol Reference</h1>
+<p>Recovered from Swap Assistant (<code>com.hinergi.swap</code> v1.33.0) decompiled sources, held in <code>reference/gatt/</code>.</p>
+
+<h2>Transport</h2>
+<p><code>connectGatt(context, autoConnect=false, callback, TRANSPORT_LE)</code> — see <code>reference/gatt/pe0.java:58</code>.
+Service discovery on GATT_SUCCESS (<code>reference/gatt/xe0.java:94</code>).
+One-shot timeouts: 10 s connect, 2 s disconnect cleanup, 5 s per read/write/descriptor (<code>reference/gatt/gf0.java:135,243,370,583,689</code>).</p>
+
+<h2>GATT profile (service <code>0x8900</code>)</h2>
+<table>
+<tr><th>Characteristic</th><th>Role</th></tr>
+<tr><td><code>0x8901</code></td><td>Notifications + handshake write (auth)</td></tr>
+<tr><td><code>0x8902</code></td><td>Main telemetry frame</td></tr>
+<tr><td><code>0x8903</code> / <code>0x8904</code> / <code>0x8907</code></td><td>Cell voltage frames</td></tr>
+<tr><td><code>0x8905</code> / <code>0x8906</code></td><td>Fault bit frames</td></tr>
+<tr><td><code>0x8910</code></td><td>Control writes (write-type default)</td></tr>
+</table>
+<p>UUIDs are 16-bit IDs expanded at runtime into the Bluetooth base UUID
+<code>0000xxxx-0000-1000-8000-00805f9b34fb</code> (<code>reference/gatt/of3.java:30</code>).</p>
+
+<h2>Handshake</h2>
+<p>Enable notifications on <code>0x8901</code> (write <code>ENABLE_NOTIFICATION_VALUE</code> to CCCD <code>0x2902</code>),
+wait ~500 ms, write 17 bytes of <code>0xFF</code> (<code>reference/gatt/of3.java:22</code>),
+wait up to 5 s. Success = non-empty response with <code>response[0] == 0x00</code>.</p>
+
+<h2>Main telemetry frame <code>0x8902</code> (big-endian, ≥16 bytes)</h2>
+<table>
+<tr><th>Bytes</th><th>Field</th><th>Notes</th></tr>
+<tr><td>0</td><td>status</td><td>0 Moving, 1 Static, 2 Storage, 3 NormalSleep, 4 DeepSleep</td></tr>
+<tr><td>1–2</td><td>voltage</td><td>u16 / 100</td></tr>
+<tr><td>3–4</td><td>current</td><td><b>signed</b> i16 / 100</td></tr>
+<tr><td>5</td><td>SOC</td><td>%</td></tr>
+<tr><td>6</td><td>SOH</td><td>%</td></tr>
+<tr><td>7</td><td>speed</td><td>unsigned</td></tr>
+<tr><td>9–11</td><td>temp, min/max cell temp</td><td>signed bytes</td></tr>
+<tr><td>13</td><td>cell count</td><td></td></tr>
+<tr><td>14</td><td>BMS status</td><td></td></tr>
+<tr><td>15</td><td>hasFault</td><td>true only when 0x01</td></tr>
+</table>
+
+<h2>Cell frames <code>0x8903</code>/<code>0x8904</code>/<code>0x8907</code></h2>
+<p>≥20 bytes; ten u16 big-endian values at 0–1 … 18–19; <code>0xFFFF</code> = placeholder, skipped;
+concatenated in read order. Raw counts, never converted to volts.</p>
+
+<h2>Control writes (to <code>0x8910</code>, 3 bytes)</h2>
+<table>
+<tr><th>Action</th><th>On</th><th>Off</th></tr>
+<tr><td>Charge MOS</td><td><code>11 01 0B</code></td><td><code>11 01 0A</code></td></tr>
+<tr><td>Power switch / Discharge MOS*</td><td><code>12 01 0B</code></td><td><code>12 01 0A</code></td></tr>
+<tr><td>Buzzer</td><td><code>13 01 0B</code></td><td><code>13 01 0A</code></td></tr>
+<tr><td>Sleep</td><td><code>10 01 0A</code></td><td>—</td></tr>
+</table>
+<p>*<code>SetPowerSwitch</code> and <code>DischargeMos</code> map to identical bytes — likely a decompilation artifact; validate on hardware.
+These bytes physically toggle charge/discharge paths: test only on an authorized pack.</p>
+</main>
+</body>
+</html>

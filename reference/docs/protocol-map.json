@@ -1,0 +1,129 @@
+{
+  "title": "Swap Assistant battery BLE profile (static app-derived reference)",
+  "evidence": {
+    "app_package": "com.hinergi.swap.op",
+    "app_label": "Haitai Asst",
+    "app_version": "1.33.0",
+    "version_code": 58,
+    "apk_sha256": "8a9b22d271f00c9547eb52fc9305fa78760d78ac38b34b4e85057808ccbfb771",
+    "basis": ["manifest/resource inspection", "JADX decompile", "targeted apktool smali cross-check"],
+    "live_device_validation": false,
+    "ble_logs_used": false
+  },
+  "uuid_base_suffix": "-0000-1000-8000-00805f9b34fb",
+  "service": {
+    "short_uuid": "8900",
+    "uuid": "00008900-0000-1000-8000-00805f9b34fb",
+    "role": "vendor battery service used by the app"
+  },
+  "characteristics": [
+    {"short_uuid": "8901", "uuid": "00008901-0000-1000-8000-00805f9b34fb", "uses": ["notification setup", "handshake write", "handshake notification response"], "role_confidence": "direct app call path"},
+    {"short_uuid": "8902", "uuid": "00008902-0000-1000-8000-00805f9b34fb", "uses": ["main telemetry read"], "min_length": 16},
+    {"short_uuid": "8903", "uuid": "00008903-0000-1000-8000-00805f9b34fb", "uses": ["cell telemetry read"], "min_length": 20, "words": 10},
+    {"short_uuid": "8904", "uuid": "00008904-0000-1000-8000-00805f9b34fb", "uses": ["cell telemetry read"], "min_length": 20, "words": 10},
+    {"short_uuid": "8905", "uuid": "00008905-0000-1000-8000-00805f9b34fb", "uses": ["conditional fault read"], "min_length": 8},
+    {"short_uuid": "8906", "uuid": "00008906-0000-1000-8000-00805f9b34fb", "uses": ["conditional fault read"], "min_length": 7},
+    {"short_uuid": "8907", "uuid": "00008907-0000-1000-8000-00805f9b34fb", "uses": ["cell telemetry read"], "min_length": 20, "words": 10},
+    {"short_uuid": "8908", "uuid": "00008908-0000-1000-8000-00805f9b34fb", "uses": [], "note": "UUID is constructed but no use was found in the recovered battery path"},
+    {"short_uuid": "8909", "uuid": "00008909-0000-1000-8000-00805f9b34fb", "uses": [], "note": "UUID is constructed but no use was found in the recovered battery path"},
+    {"short_uuid": "8910", "uuid": "00008910-0000-1000-8000-00805f9b34fb", "uses": ["typed control writes"], "write_type_android": 2}
+  ],
+  "scan_and_connect": {
+    "scan_filter_list": null,
+    "scan_mode_android": 2,
+    "match": "exact advertised alias/name string; returns device address",
+    "connect_gatt_auto_connect": false,
+    "connect_transport_android": 2
+  },
+  "handshake": {
+    "service_short_uuid": "8900",
+    "characteristic_short_uuid": "8901",
+    "notifications_enabled_first": true,
+    "delay_before_write_ms": 500,
+    "payload_hex": "ffffffffffffffffffffffffffffffffff",
+    "payload_length": 17,
+    "response_timeout_ms": 5000,
+    "accepted_response_condition": "nonempty notification and first byte equals 0x00",
+    "interpretation_limit": "app labels this auth; protocol security and battery-side enforcement are unverified"
+  },
+  "telemetry_poll": {
+    "order": ["8902", "8903", "8904", "8907"],
+    "conditional_reads_when_main_has_fault": ["8905", "8906"],
+    "delay_between_cycles_ms": 1000,
+    "byte_order": "big-endian"
+  },
+  "main_frame_8902": {
+    "minimum_length": 16,
+    "fields": [
+      {"offset": 0, "width": 1, "name": "status", "type": "signed int8 enum", "values": {"0": "Moving", "1": "Static", "2": "Storage", "3": "NormalSleep", "4": "DeepSleep"}, "other": "Unknown"},
+      {"offset": 1, "width": 2, "name": "voltage", "type": "uint16_be", "scale_divisor": 100},
+      {"offset": 3, "width": 2, "name": "current", "type": "int16_be", "scale_divisor": 100},
+      {"offset": 5, "width": 1, "name": "soc", "type": "signed int8"},
+      {"offset": 6, "width": 1, "name": "soh", "type": "signed int8"},
+      {"offset": 7, "width": 1, "name": "speed", "type": "uint8"},
+      {"offset": 8, "width": 1, "name": "unmapped", "type": "ignored"},
+      {"offset": 9, "width": 1, "name": "temperature", "type": "signed int8", "unit": "unknown"},
+      {"offset": 10, "width": 1, "name": "min_cell_temperature", "type": "signed int8", "unit": "unknown"},
+      {"offset": 11, "width": 1, "name": "max_cell_temperature", "type": "signed int8", "unit": "unknown"},
+      {"offset": 12, "width": 1, "name": "unmapped", "type": "ignored"},
+      {"offset": 13, "width": 1, "name": "cell_count", "type": "signed int8"},
+      {"offset": 14, "width": 1, "name": "bms_status", "type": "signed int8", "meaning": "unknown"},
+      {"offset": 15, "width": 1, "name": "has_fault", "type": "boolean", "true_when": "byte equals 0x01"}
+    ],
+    "trailing_bytes": "ignored by recovered field mapping"
+  },
+  "cell_frame": {
+    "characteristics": ["8903", "8904", "8907"],
+    "minimum_length": 20,
+    "entries": 10,
+    "entry_width_bytes": 2,
+    "entry_type": "uint16_be",
+    "sentinel_ignored": "0xFFFF",
+    "unit_or_scale": "unknown; expose as raw counts"
+  },
+  "fault_frames": {
+    "8905": {
+      "minimum_length": 8,
+      "bits": [
+        {"byte": 1, "bit": 2, "name": "CHARGE_OVER_CURRENT"},
+        {"byte": 1, "bit": 3, "name": "DISCHARGE_OVER_CURRENT"},
+        {"byte": 1, "bit": 4, "name": "SHORT_CIRCUIT"},
+        {"byte": 1, "bit": 5, "name": "CHARGE_HIGH_TEMP"},
+        {"byte": 1, "bit": 6, "name": "DISCHARGE_HIGH_TEMP"},
+        {"byte": 1, "bit": 7, "name": "CHARGE_LOW_TEMP"},
+        {"byte": 2, "bit": 0, "name": "DISCHARGE_LOW_TEMP"},
+        {"byte": 2, "bit": 1, "name": "CHARGE_MOS_BAD"},
+        {"byte": 2, "bit": 2, "name": "DISCHARGE_MOS_BAD"},
+        {"byte": 2, "bit": 3, "name": "INTERNAL_COMM_ERROR"}
+      ]
+    },
+    "8906": {
+      "minimum_length": 7,
+      "bits": [
+        {"byte": 5, "bit": 0, "name": "CELL_DIFF_LARGE"},
+        {"byte": 5, "bit": 1, "name": "TOTAL_OVER_VOLTAGE"},
+        {"byte": 5, "bit": 2, "name": "TOTAL_UNDER_VOLTAGE"},
+        {"byte": 5, "bit": 3, "name": "ULTRA_HIGH_TEMP"},
+        {"byte": 5, "bit": 4, "name": "MOS_HIGH_TEMP"},
+        {"byte": 5, "bit": 5, "name": "ENV_LOW_TEMP"},
+        {"byte": 5, "bit": 6, "name": "ENV_HIGH_TEMP"},
+        {"byte": 5, "bit": 7, "name": "CELL_FAIL"},
+        {"byte": 6, "bit": 3, "name": "BATTERY_LOST"}
+      ]
+    }
+  },
+  "control_writes_static_only": {
+    "service_short_uuid": "8900",
+    "characteristic_short_uuid": "8910",
+    "layout_note": "three bytes; exact meanings beyond app dispatch labels are unverified",
+    "operations": [
+      {"model": "SetPowerSwitch", "on": "12010b", "off": "12010a"},
+      {"model": "ChargeMos", "on": "11010b", "off": "11010a"},
+      {"model": "DischargeMos", "on": "12010b", "off": "12010a"},
+      {"model": "Buzzer", "on": "13010b", "off": "13010a"},
+      {"model": "Sleep", "payload": "10010a"}
+    ],
+    "live_writes_performed": false,
+    "device_side_effects_verified": false
+  }
+}

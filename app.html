@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BMS Monitor — Haitai Battery BLE</title>
+<style>
+  :root { color-scheme: dark; --bg:#0f1419; --card:#1c2430; --line:#2d3b4c; --ok:#7ee787; --warn:#f0b429; --bad:#f4796b; --txt:#e6edf3; --dim:#8b98a9; }
+  * { box-sizing:border-box; }
+  body { font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); margin:0; padding:1rem; line-height:1.45; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size:1.25rem; margin:.2rem 0 1rem; }
+  h2 { font-size:.95rem; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; margin:1.4rem 0 .5rem; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.6rem; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.7rem .85rem; }
+  .card .k { font-size:.72rem; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; }
+  .card .v { font-size:1.45rem; font-weight:600; font-variant-numeric:tabular-nums; }
+  .card .u { font-size:.8rem; color:var(--dim); font-weight:400; }
+  .soc .v { color:var(--ok); }
+  .bar { height:6px; background:var(--line); border-radius:3px; margin-top:.5rem; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:var(--ok); width:0%; transition:width .4s; }
+  .status { display:inline-block; padding:.15em .6em; border-radius:99px; font-size:.8rem; font-weight:600; }
+  .st-static { background:#23408a; } .st-moving { background:#2d6a39; } .st-sleep { background:#5a4a17; }
+  table { border-collapse:collapse; width:100%; font-size:.85rem; }
+  th,td { border:1px solid var(--line); padding:.35em .55em; text-align:left; font-variant-numeric:tabular-nums; }
+  th { background:var(--card); color:var(--dim); font-weight:500; }
+  .faults { display:flex; flex-wrap:wrap; gap:.4rem; min-height:1.6rem; }
+  .fault { background:#3d1f1c; color:var(--bad); border:1px solid #6b2e28; padding:.15em .6em; border-radius:99px; font-size:.78rem; }
+  .none { color:var(--dim); font-size:.85rem; }
+  .ctrls { display:flex; flex-wrap:wrap; gap:.5rem; }
+  button { background:var(--card); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:.55em .9em; font-size:.85rem; cursor:pointer; }
+  button:hover { border-color:var(--dim); }
+  .raw { font-family:ui-monospace,monospace; font-size:.72rem; color:var(--dim); background:var(--card); border:1px solid var(--line); border-radius:8px; padding:.6rem; overflow-x:auto; white-space:pre; }
+  .conn { display:flex; align-items:center; gap:.5rem; margin-bottom:1rem; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); box-shadow:0 0 6px var(--ok); }
+  .dot.sim { background:var(--warn); box-shadow:0 0 6px var(--warn); }
+  footer { margin-top:1.6rem; font-size:.75rem; color:var(--dim); }
+  footer a { color:inherit; }
+</style>
+</head>
+<body>
+<main>
+<h1>BMS Monitor</h1>
+<div class="conn"><span class="dot sim"></span><span id="connlabel">Simulated BLE link — service 0x8900</span></div>
+
+<div class="cards">
+  <div class="card"><div class="k">Voltage</div><div class="v" id="voltage">—</div><div class="u">V</div></div>
+  <div class="card"><div class="k">Current</div><div class="v" id="current">—</div><div class="u">A</div></div>
+  <div class="card soc"><div class="k">SOC</div><div class="v" id="soc">—</div><div class="u">%</div><div class="bar"><i id="socbar"></i></div></div>
+  <div class="card"><div class="k">SOH</div><div class="v" id="soh">—</div><div class="u">%</div></div>
+  <div class="card"><div class="k">Temp</div><div class="v" id="temp">—</div><div class="u">°C</div></div>
+  <div class="card"><div class="k">Status</div><div class="v" id="status" style="font-size:1rem"><span class="status st-static">—</span></div></div>
+</div>
+
+<h2>Cells (0x8903–07)</h2>
+<table id="cellstable"><thead><tr><th>Cell</th><th>Raw</th></tr></thead><tbody></tbody></table>
+
+<h2>Faults (0x8905/06)</h2>
+<div class="faults" id="faults"><span class="none">none</span></div>
+
+<h2>Control writes → 0x8910</h2>
+<div class="ctrls">
+  <button data-cmd="11010B">Charge MOS on</button>
+  <button data-cmd="11010A">Charge MOS off</button>
+  <button data-cmd="12010B">MOS on</button>
+  <button data-cmd="12010A">MOS off</button>
+  <button data-cmd="13010B">Buzzer on</button>
+  <button data-cmd="13010A">Buzzer off</button>
+  <button data-cmd="10010A">Sleep</button>
+</div>
+<p class="none" id="lastwrite" style="font-size:.8rem"></p>
+
+<h2>Last frames</h2>
+<div class="raw" id="raw">waiting…</div>
+
+<footer>Handshake: notify on 0x8901 → write 17×0xFF → expect response[0]==0x00. Frame layouts per decompiled Swap Assistant sources in <a href="https://github.com/none">reference/gatt/</a>. Control bytes not hardware-validated (SetPowerSwitch/DischargeMos collision).</footer>
+</main>
+
+<script>
+// ---- Protocol constants (verified against reference/gatt/of3.java) ----
+const BASE = '0000';
+
+// ---- Frame decoders (layouts per docs/02-telemetry.md, 03-fault-bits.md) ----
+function u16(b, o) { return (b[o] << 8) | b[o + 1]; }
+function i16(b, o) { const v = u16(b, o); return v >= 0x8000 ? v - 0x10000 : v; }
+
+const STATUS_NAMES = ['Moving', 'Static', 'Storage', 'NormalSleep', 'DeepSleep'];
+
+function decodeMain(b) {
+  if (b.length < 16) return null;
+  return {
+    status: b[0], voltage: u16(b, 1) / 100, current: i16(b, 3) / 100,
+    soc: b[5], soh: b[6], speed: b[7], temp: b[9],
+    cellCount: b[13], bmsStatus: b[14], hasFault: b[15] === 1,
+  };
+}
+function decodeCells(b) {
+  if (b.length < 20) return [];
+  const out = [];
+  for (let i = 0; i < 10; i++) { const v = u16(b, i * 2); if (v !== 0xFFFF) out.push(v); }
+  return out;
+}
+const FAULTS_8905_B1 = { 2:'CHARGE_OVER_CURRENT', 3:'DISCHARGE_OVER_CURRENT', 4:'SHORT_CIRCUIT', 5:'CHARGE_HIGH_TEMP', 6:'DISCHARGE_HIGH_TEMP', 7:'CHARGE_LOW_TEMP' };
+const FAULTS_8905_B2 = { 0:'DISCHARGE_LOW_TEMP', 1:'CHARGE_MOS_BAD', 2:'DISCHARGE_MOS_BAD', 3:'INTERNAL_COMM_ERROR' };
+const FAULTS_8906_B5 = { 0:'CELL_DIFF_LARGE', 1:'TOTAL_OVER_VOLTAGE', 2:'TOTAL_UNDER_VOLTAGE', 3:'ULTRA_HIGH_TEMP', 4:'MOS_HIGH_TEMP', 5:'ENV_LOW_TEMP', 6:'ENV_HIGH_TEMP', 7:'CELL_FAIL' };
+const FAULTS_8906_B6 = { 3:'BATTERY_LOST' };
+function decodeFaults(b) {
+  const names = [];
+  const add = (byte, map) => { for (const [bit, name] of Object.entries(map)) if (byte & (1 << bit)) names.push(name); };
+  if (b.length >= 3) { add(b[1], FAULTS_8905_B1); add(b[2], FAULTS_8905_B2); }
+  if (b.length >= 7) { add(b[5], FAULTS_8906_B5); add(b[6], FAULTS_8906_B6); }
+  return names;
+}
+
+// ---- Simulator: builds frames exactly as the firmware would ----
+function simMain(t) {
+  const b = new Array(16).fill(0);
+  b[0] = [1,1,1,0,1][t % 5]; // mostly Static
+  const volt = Math.round((51.2 + Math.sin(t / 12) * 0.4) * 100);
+  b[1] = volt >> 8; b[2] = volt & 0xFF;
+  const cur = Math.round(Math.sin(t / 9) * 7.5 * 100);
+  b[3] = (cur >> 8) & 0xFF; b[4] = cur & 0xFF;
+  b[5] = Math.max(20, Math.min(100, 78 - Math.floor(t / 30)));
+  b[6] = 98; b[7] = 0; b[9] = 27; b[10] = 25; b[11] = 29;
+  b[13] = 15; b[14] = 0; b[15] = (t % 45) === 44 ? 1 : 0;
+  return b;
+}
+function simCells(t) {
+  const base = 3410 + Math.round(Math.sin(t / 7) * 6);
+  const cells = [];
+  for (let i = 0; i < 15; i++) cells.push(base + Math.round(Math.sin(i * 2.3 + t) * 4));
+  const frames = [];
+  for (let f = 0; f < 2; f++) {
+    const b = new Array(20).fill(0xFF >> 8); // 0xFF fill
+    for (let i = 0; i < 20; i++) b[i] = 0xFF;
+    for (let i = 0; i < 10; i++) {
+      const v = cells[f * 10 + i];
+      if (v === undefined) continue;
+      b[i * 2] = v >> 8; b[i * 2 + 1] = v & 0xFF;
+    }
+    frames.push(b);
+  }
+  return frames;
+}
+function simFaults(t) {
+  const b = new Array(7).fill(0);
+  if ((t % 45) === 44) b[5] = 1 << 2; // CELL_DIFF_LARGE
+  return b;
+}
+
+// ---- UI wiring ----
+const $ = id => document.getElementById(id);
+function hex(b) { return b.map(x => x.toString(16).padStart(2, '0')).join(' '); }
+function statusChip(s) {
+  const names = ['st-moving', 'st-static', 'st-static', 'st-sleep', 'st-sleep'];
+  return `<span class="status ${names[s] || 'st-static'}">${STATUS_NAMES[s] || 'Unknown ' + s}</span>`;
+}
+let cellIndex = 0;
+function render(t) {
+  const m = decodeMain(simMain(t));
+  $('voltage').textContent = m.voltage.toFixed(2);
+  const cur = $('current'); cur.textContent = m.current.toFixed(2);
+  cur.style.color = m.current < -0.2 ? 'var(--warn)' : 'var(--ok)';
+  $('soc').textContent = m.soc;
+  $('socbar').style.width = m.soc + '%';
+  $('soh').textContent = m.soh;
+  $('temp').textContent = m.temp;
+  $('status').innerHTML = statusChip(m.status);
+
+  const cells = decodeCells(simCells(t)[0]).concat(decodeCells(simCells(t)[1]));
+  cellIndex = cells.length;
+  const tb = $('cellstable').querySelector('tbody');
+  tb.innerHTML = cells.map((v, i) => `<tr><td>Cell ${i + 1}</td><td>${v}</td></tr>`).join('');
+
+  const faults = decodeFaults(simFaults(t));
+  $('faults').innerHTML = faults.length ? faults.map(f => `<span class="fault">${f}</span>`).join('') : '<span class="none">none</span>';
+
+  $('raw').textContent =
+    `0x8902 ${hex(simMain(t))}\n` +
+    `0x8903 ${hex(simCells(t)[0])}\n` +
+    `0x8904 ${hex(simCells(t)[1])}\n` +
+    `0x8905/06 ${hex(simFaults(t))}`;
+}
+let tick = 0;
+render(0);
+setInterval(() => render(++tick), 1000);
+
+document.querySelectorAll('.ctrls button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const cmd = btn.dataset.cmd;
+    $('lastwrite').textContent = `→ write 0x8910: ${cmd.match(/../g).join(' ')} (${btn.textContent})`;
+  });
+});
+</script>
+</body>
+</html>
