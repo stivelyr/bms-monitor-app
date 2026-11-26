@@ -1,0 +1,7 @@
+app-assets-generated/
+android/app/build/
+android/.gradle/
+android/build/
+.gradle/
+local.properties
+dist/

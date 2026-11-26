@@ -1,0 +1,4 @@
+com.hinergi.bmsmonitor:mipmap/ic_launcher = 0x7f030000
+com.hinergi.bmsmonitor:drawable/ic_fg = 0x7f020000
+com.hinergi.bmsmonitor:style/Theme.BMSMonitor = 0x7f040000
+com.hinergi.bmsmonitor:color/ic_bg = 0x7f010000

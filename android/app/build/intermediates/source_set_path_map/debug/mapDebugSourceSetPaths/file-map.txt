@@ -1,0 +1,7 @@
+com.hinergi.bmsmonitor.app-pngs-0 /vercel/sandbox/repo/android/app/build/generated/res/pngs/debug
+com.hinergi.bmsmonitor.app-resValues-1 /vercel/sandbox/repo/android/app/build/generated/res/resValues/debug
+com.hinergi.bmsmonitor.app-packageDebugResources-2 /vercel/sandbox/repo/android/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir
+com.hinergi.bmsmonitor.app-packageDebugResources-3 /vercel/sandbox/repo/android/app/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
+com.hinergi.bmsmonitor.app-debug-4 /vercel/sandbox/repo/android/app/build/intermediates/merged_res/debug/mergeDebugResources
+com.hinergi.bmsmonitor.app-debug-5 /vercel/sandbox/repo/android/app/src/debug/res
+com.hinergi.bmsmonitor.app-main-6 /vercel/sandbox/repo/android/app/src/main/res

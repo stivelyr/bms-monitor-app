@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BMS Monitor — Haitai Battery BLE</title>
+<style>
+  /* ---- Design tokens: Apple-inspired dark (product-first, airy); mono reserved for data ---- */
+  :root {
+    color-scheme: dark;
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --surface-2: #2c2c2e;
+    --text: #f5f5f7;
+    --heading: #f5f5f7;
+    --muted: #98989d;
+    --faint: #98989d;
+    --accent: #30d158;          /* iOS green */
+    --interactive: #0a84ff;     /* iOS blue */
+    --warn: #ff9f0a;            /* iOS orange */
+    --bad: #ff453a;             /* iOS red */
+    --border: rgba(255,255,255,.10);
+    --hairline: rgba(255,255,255,.06);
+    --radius: 18px;
+    --radius-sm: 10px;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 44px; --sp-8: 64px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: 15px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    padding: var(--sp-6) var(--sp-5) var(--sp-8);
+  }
+  main { max-width: 980px; margin: 0 auto; }
+
+  .eyebrow { color: var(--accent); font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; }
+  h1 { color: var(--heading); font-size: 2.2rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; margin: var(--sp-2) 0 var(--sp-3); }
+  @media (min-width: 720px) { h1 { font-size: 2.8rem; } }
+  .lede { color: var(--muted); font-size: 1.05rem; max-width: 58ch; margin: 0 0 var(--sp-6); }
+  .lede code { font-family: var(--mono); font-size: .85em; color: var(--text); }
+
+  h2 {
+    color: var(--muted); font-size: .78rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .12em;
+    margin: var(--sp-7) 0 var(--sp-3);
+    display: flex; align-items: baseline; gap: var(--sp-2);
+  }
+  h2 .frame { font-family: var(--mono); color: var(--accent); font-weight: 500; letter-spacing: 0; text-transform: none; font-size: .78rem; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: var(--radius); padding: var(--sp-5);
+  }
+
+  /* ---- Connection ---- */
+  .conn { display: grid; gap: var(--sp-4); }
+  @media (min-width: 720px) { .conn { grid-template-columns: 1fr auto; align-items: center; } }
+  .conn-meta { display: flex; flex-wrap: wrap; gap: var(--sp-4) var(--sp-6); }
+  .meta .k { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; }
+  .meta .v { font-family: var(--mono); font-size: .9rem; font-variant-numeric: tabular-nums; }
+  .meta .v.ok { color: var(--accent); }
+  .meta .v.warn { color: var(--warn); }
+  .meta .v.bad { color: var(--bad); }
+  .conn-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: var(--faint); margin-right: 6px; }
+  .conn-dot.streaming { background: var(--accent); box-shadow: 0 0 10px rgba(48,209,88,.8); animation: pulse 2.2s infinite; }
+  .conn-dot.connecting { background: var(--warn); animation: pulse 1s infinite; }
+  .conn-dot.error { background: var(--bad); }
+  @keyframes pulse { 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) { .conn-dot { animation: none !important; } .bar > i, .cellbar > i { transition: none !important; } }
+
+  .sigbars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; margin-right: 6px; vertical-align: -1px; }
+  .sigbars i { width: 3px; border-radius: 1px; background: var(--surface-2); }
+  .sigbars i:nth-child(1) { height: 4px; } .sigbars i:nth-child(2) { height: 7px; }
+  .sigbars i:nth-child(3) { height: 10px; } .sigbars i:nth-child(4) { height: 14px; }
+  .sigbars.lvl1 i:nth-child(1), .sigbars.lvl2 i:nth-child(-n+2), .sigbars.lvl3 i:nth-child(-n+3), .sigbars.lvl4 i { background: var(--accent); }
+  .sigbars.lvl2.lvl-warn i:nth-child(-n+2), .sigbars.lvl3.lvl-warn i:nth-child(-n+3) { background: var(--warn); }
+  .sigbars.lvl1.lvl-warn i:nth-child(1) { background: var(--bad); }
+
+  button {
+    font: inherit; color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: .6em 1.3em; cursor: pointer; min-height: 44px;
+    transition: background 140ms ease-out, opacity 140ms ease-out;
+  }
+  button:hover { background: #3a3a3c; }
+  button:focus-visible { outline: 2px solid var(--interactive); outline-offset: 2px; }
+  button:disabled { color: var(--faint); cursor: not-allowed; }
+  .btn-primary { background: var(--accent); border-color: transparent; color: #05170c; font-weight: 600; }
+  .btn-primary:hover { background: #43dd6c; }
+  .btn-ghost { min-height: 0; padding: .25em .8em; font-size: .78rem; border-radius: 999px; }
+
+  /* ---- Telemetry ---- */
+  .hero { text-align: left; padding: var(--sp-5) 0 var(--sp-6); border-bottom: 1px solid var(--hairline); margin-bottom: var(--sp-5); }
+  .hero .k { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .12em; }
+  .hero .big {
+    font-family: var(--mono); font-size: clamp(3rem, 9vw, 4.6rem); font-weight: 700;
+    color: var(--heading); letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums;
+  }
+  .hero .u { font-size: 1.4rem; color: var(--muted); font-weight: 500; margin-left: 6px; }
+  .hero .sub { font-family: var(--mono); color: var(--muted); font-size: .85rem; margin-top: var(--sp-2); }
+
+  .strip { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-5) var(--sp-4); }
+  @media (min-width: 640px) { .strip { grid-template-columns: repeat(4, 1fr); } }
+  .metric .k { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; }
+  .metric .v {
+    font-family: var(--mono); font-size: 1.45rem; color: var(--heading);
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em; line-height: 1.25;
+  }
+  .metric .v.small { font-size: 1.05rem; }
+  .metric .u { color: var(--muted); font-size: .8rem; margin-left: 2px; }
+  .metric .v.ok { color: var(--accent); } .metric .v.warn { color: var(--warn); } .metric .v.bad { color: var(--bad); }
+
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-top: var(--sp-2); }
+  .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .6s ease; }
+  .bar.warn > i { background: var(--warn); }
+
+  .chip {
+    display: inline-block; font-family: var(--mono); font-size: .75rem; font-weight: 600;
+    padding: .25em .7em; border-radius: 999px; letter-spacing: .04em;
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  }
+  .chip-sleep { background: rgba(255,159,10,.15); color: var(--warn); border-color: rgba(255,159,10,.35); }
+  .chip-move { background: rgba(10,132,255,.15); color: #6cb2ff; border-color: rgba(10,132,255,.35); }
+  .fault {
+    display: inline-block; font-family: var(--mono); font-size: .75rem; font-weight: 600;
+    padding: .25em .7em; border-radius: 999px; margin: 0 var(--sp-2) var(--sp-2) 0;
+    background: rgba(255,69,58,.14); color: var(--bad); border: 1px solid rgba(255,69,58,.35);
+  }
+  .none { font-family: var(--mono); color: var(--accent); font-size: .85rem; }
+
+  /* ---- Cells ---- */
+  .cellgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); }
+  @media (min-width: 640px) { .cellgrid { grid-template-columns: repeat(5, 1fr); } }
+  .cell {
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+    padding: var(--sp-3);
+  }
+  .cell .n { color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; }
+  .cell .mv { font-family: var(--mono); font-size: .95rem; font-variant-numeric: tabular-nums; }
+  .cell .mv.hi { color: var(--warn); } .cell .mv.lo { color: var(--interactive); }
+  .cellbar { height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; margin-top: var(--sp-2); }
+  .cellbar > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; transition: width .6s ease; }
+  .cell-empty { color: var(--muted); grid-column: 1 / -1; }
+  .cellsummary { font-family: var(--mono); font-size: .82rem; color: var(--muted); margin: var(--sp-3) 2px var(--sp-3); }
+  .cellsummary b { color: var(--text); font-weight: 600; }
+
+  /* ---- Banners, log, raw ---- */
+  .banner-error {
+    display: none; align-items: center; justify-content: space-between; gap: var(--sp-3);
+    background: rgba(255,69,58,.12); border: 1px solid rgba(255,69,58,.4); border-radius: var(--radius-sm);
+    padding: var(--sp-3) var(--sp-4); margin-top: var(--sp-4);
+    font-size: .9rem;
+  }
+  .banner-error.show { display: flex; }
+  .warning {
+    font-size: .82rem; color: var(--warn); background: rgba(255,159,10,.1);
+    border: 1px solid rgba(255,159,10,.3); border-radius: var(--radius-sm);
+    padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4);
+  }
+  .warning code, .lede code { font-family: var(--mono); }
+  .warning code { color: var(--text); }
+  .ctrls { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+  .lastwrite { font-family: var(--mono); font-size: .82rem; color: var(--accent); margin: var(--sp-4) 0 0; min-height: 1.2em; }
+  .cmdlog {
+    font-family: var(--mono); font-size: .78rem; color: var(--muted);
+    background: #111113; border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+    padding: var(--sp-3) var(--sp-4); margin-top: var(--sp-4);
+    max-height: 180px; overflow-y: auto; white-space: pre-wrap;
+  }
+  .cmdlog .t { color: var(--faint); }
+  .raw {
+    font-family: var(--mono); font-size: .78rem; line-height: 1.7; color: var(--muted);
+    background: #111113; border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+    padding: var(--sp-4); overflow-x: auto; white-space: pre; font-variant-numeric: tabular-nums;
+  }
+  .raw .addr { color: var(--accent); }
+  .cadence { color: var(--muted); font-size: .82rem; margin-top: var(--sp-4); }
+  footer { color: var(--faint); font-size: .78rem; margin-top: var(--sp-7); max-width: 75ch; }
+
+  /* ---- Confirm dialog ---- */
+  dialog {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 22px; padding: var(--sp-6); max-width: 340px; width: calc(100% - 48px);
+    box-shadow: 0 24px 64px rgba(0,0,0,.6);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.55); backdrop-filter: blur(4px); }
+  dialog h3 { margin: 0 0 var(--sp-3); font-size: 1.1rem; text-align: center; }
+  dialog p { color: var(--muted); font-size: .9rem; text-align: center; margin: 0 0 var(--sp-5); }
+  dialog p code { font-family: var(--mono); color: var(--text); }
+  dialog .row { display: flex; gap: var(--sp-3); }
+  dialog .row button { flex: 1; }
+  .btn-destructive { background: var(--bad); border-color: transparent; color: #fff; font-weight: 600; }
+  .btn-destructive:hover { background: #ff5f55; }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">BMS Monitor · Haitai BLE</div>
+  <h1>Battery detail</h1>
+  <p class="lede">Live pack telemetry over GATT on service <code>0x8900</code> — total voltage and current, cell voltages, temperature extremes and MOS control writes, every value traced to the decompiled protocol in <code>reference/</code>.</p>
+
+  <!-- Connection -->
+  <section class="card conn" aria-label="Connection">
+    <div class="conn-meta">
+      <div class="meta"><span class="k">State</span><br><span class="v" id="gattstate"><span class="conn-dot" id="dot"></span>idle</span></div>
+      <div class="meta"><span class="k">RSSI</span><br><span class="v" id="rssi"><span class="sigbars" id="sigbars"><i></i><i></i><i></i><i></i></span>— dBm</span></div>
+      <div class="meta"><span class="k">Handshake 0x8901</span><br><span class="v" id="hs">—</span></div>
+      <div class="meta"><span class="k">Timeouts</span><br><span class="v" id="to">connect 10s · op 5s</span></div>
+    </div>
+    <button class="btn-primary" id="connectbtn">Connect to pack</button>
+  </section>
+  <div class="banner-error" id="errbanner" role="alert">
+    <span id="errmsg">Link lost — no telemetry for 5 s.</span>
+    <button class="btn-ghost" id="retrybtn">Retry</button>
+  </div>
+
+  <!-- Telemetry -->
+  <h2>Telemetry <span class="frame">0x8902</span></h2>
+  <section class="card" aria-label="Telemetry">
+    <div class="hero">
+      <div class="k">Total voltage</div>
+      <span class="big" id="voltage">—</span><span class="u">V</span>
+      <div class="sub" id="voltsub">unsigned 16-bit big-endian, offset 1, ÷100</div>
+    </div>
+    <div class="strip">
+      <div class="metric"><div class="k">Current</div><div class="v" id="current">—</div><span class="u">A · signed</span></div>
+      <div class="metric"><div class="k">SOC</div><div class="v" id="soc">—</div><span class="u">%</span><div class="bar" id="socbarwrap"><i id="socbar"></i></div></div>
+      <div class="metric"><div class="k">SOH</div><div class="v" id="soh">—</div><span class="u">%</span></div>
+      <div class="metric"><div class="k">Speed</div><div class="v" id="speed">—</div><span class="u">raw</span></div>
+      <div class="metric"><div class="k">Temperature</div><div class="v" id="temp">—</div><span class="u">raw</span></div>
+      <div class="metric"><div class="k">Cell temp min/max</div><div class="v small" id="tempmm">— / —</div></div>
+      <div class="metric"><div class="k">State</div><div class="v small" id="status"><span class="chip">—</span></div></div>
+      <div class="metric"><div class="k">Cell count</div><div class="v" id="cellcount">—</div></div>
+      <div class="metric"><div class="k">BMS status</div><div class="v small" id="bms">—</div><span class="u">raw byte, meaning unverified</span></div>
+      <div class="metric"><div class="k">Fault flag</div><div class="v small" id="faultflag">—</div></div>
+    </div>
+    <div class="cadence" id="cadence">Not streaming. Frames refresh every 1 s while connected.</div>
+  </section>
+
+  <!-- Cells -->
+  <h2>Cell voltages <span class="frame">0x8903 · 04 · 07</span></h2>
+  <div class="cellsummary" id="cellsummary">Voltage diff — · extreme —</div>
+  <div class="cellgrid" id="cells" aria-live="polite"><span class="cell-empty">No cell data — connect to a pack to populate the 15-cell strip.</span></div>
+
+  <!-- Faults -->
+  <h2>Faults <span class="frame">0x8905/06</span></h2>
+  <div id="faults"><span class="none">none</span></div>
+
+  <!-- Control -->
+  <h2>Control writes <span class="frame">→ 0x8910</span></h2>
+  <section class="card" aria-label="Control">
+    <div class="warning">Hardware-validation warning: <code>SetPowerSwitch</code> and <code>DischargeMos</code> both map to <code>12 01 …</code> in the recovered dispatcher — unverified on a real pack. Charge MOS (<code>11</code>), buzzer (<code>13</code>) and sleep (<code>10</code>) are confidently mapped.</div>
+    <div class="ctrls" id="ctrls">
+      <button data-cmd="11010B" data-op="Charge MOS on">Charge MOS on</button>
+      <button data-cmd="11010A" data-op="Charge MOS off">Charge MOS off</button>
+      <button data-cmd="12010B" data-op="Power/discharge on" data-confirm="1">Power / discharge on</button>
+      <button data-cmd="12010A" data-op="Power/discharge off" data-confirm="1">Power / discharge off</button>
+      <button data-cmd="13010B" data-op="Buzzer on">Buzzer on</button>
+      <button data-cmd="13010A" data-op="Buzzer off">Buzzer off</button>
+      <button data-cmd="10010A" data-op="Sleep" data-confirm="1">Sleep</button>
+    </div>
+    <p class="lastwrite" id="lastwrite" aria-live="polite"></p>
+    <div class="cmdlog" id="cmdlog"><span class="t">TX log — control writes appear here with timestamps.</span></div>
+  </section>
+
+  <h2>Raw frames</h2>
+  <div class="raw" id="raw">waiting for connect…</div>
+
+  <footer>Handshake: notify on 0x8901 → write 17×0xFF → expect response[0]==0x00. Frame layouts per decompiled Swap Assistant sources in reference/gatt/. BMS-status byte meaning and control bytes are not hardware-validated. <button class="btn-ghost" id="dropbtn">Simulate link drop</button></footer>
+</main>
+
+<dialog id="confirmdlg">
+  <h3 id="confirmtitle">Confirm write</h3>
+  <p id="confirmmsg"></p>
+  <div class="row">
+    <button id="confirmcancel">Cancel</button>
+    <button class="btn-destructive" id="confirmok">Send</button>
+  </div>
+</dialog>
+
+<script>
+// ---- Protocol constants (verified against reference/gatt/of3.java) ----
+const BASE = '0000';
+
+// ---- Frame decoders (layouts per docs/protocol-map.json, main_frame_8902) ----
+function u16(b, o) { return (b[o] << 8) | b[o + 1]; }
+function i16(b, o) { const v = u16(b, o); return v >= 0x8000 ? v - 0x10000 : v; }
+
+const STATUS_NAMES = ['Moving', 'Static', 'Storage', 'NormalSleep', 'DeepSleep'];
+
+function decodeMain(b) {
+  if (b.length < 16) return null;
+  return {
+    status: b[0], voltage: u16(b, 1) / 100, current: i16(b, 3) / 100,
+    soc: b[5], soh: b[6], speed: b[7], temp: b[9],
+    minTemp: b[10], maxTemp: b[11],
+    cellCount: b[13], bmsStatus: b[14], hasFault: b[15] === 1,
+  };
+}
+function decodeCells(b) {
+  if (b.length < 20) return [];
+  const out = [];
+  for (let i = 0; i < 10; i++) { const v = u16(b, i * 2); if (v !== 0xFFFF) out.push(v); }
+  return out;
+}
+const FAULTS_8905_B1 = { 2:'CHARGE_OVER_CURRENT', 3:'DISCHARGE_OVER_CURRENT', 4:'SHORT_CIRCUIT', 5:'CHARGE_HIGH_TEMP', 6:'DISCHARGE_HIGH_TEMP', 7:'CHARGE_LOW_TEMP' };
+const FAULTS_8905_B2 = { 0:'DISCHARGE_LOW_TEMP', 1:'CHARGE_MOS_BAD', 2:'DISCHARGE_MOS_BAD', 3:'INTERNAL_COMM_ERROR' };
+const FAULTS_8906_B5 = { 0:'CELL_DIFF_LARGE', 1:'TOTAL_OVER_VOLTAGE', 2:'TOTAL_UNDER_VOLTAGE', 3:'ULTRA_HIGH_TEMP', 4:'MOS_HIGH_TEMP', 5:'ENV_LOW_TEMP', 6:'ENV_HIGH_TEMP', 7:'CELL_FAIL' };
+const FAULTS_8906_B6 = { 3:'BATTERY_LOST' };
+function decodeFaults(b) {
+  const names = [];
+  const add = (byte, map) => { for (const [bit, name] of Object.entries(map)) if (byte & (1 << bit)) names.push(name); };
+  if (b.length >= 3) { add(b[1], FAULTS_8905_B1); add(b[2], FAULTS_8905_B2); }
+  if (b.length >= 7) { add(b[5], FAULTS_8906_B5); add(b[6], FAULTS_8906_B6); }
+  return names;
+}
+
+// ---- Simulator: builds frames exactly as the firmware would ----
+function simMain(t) {
+  const b = new Array(16).fill(0);
+  b[0] = [1,1,1,0,1][t % 5]; // mostly Static
+  const volt = Math.round((51.2 + Math.sin(t / 12) * 0.4) * 100);
+  b[1] = volt >> 8; b[2] = volt & 0xFF;
+  const cur = Math.round(Math.sin(t / 9) * 7.5 * 100);
+  b[3] = (cur >> 8) & 0xFF; b[4] = cur & 0xFF;
+  b[5] = Math.max(20, Math.min(100, 78 - Math.floor(t / 30)));
+  b[6] = 98; b[7] = Math.max(0, Math.round(Math.sin(t / 9) * 14)); b[9] = 27; b[10] = 25; b[11] = 29;
+  b[13] = 15; b[14] = 0; b[15] = (t % 45) === 44 ? 1 : 0;
+  return b;
+}
+function simCells(t) {
+  const base = 3410 + Math.round(Math.sin(t / 7) * 6);
+  const cells = [];
+  for (let i = 0; i < 15; i++) cells.push(base + Math.round(Math.sin(i * 2.3 + t) * 4));
+  const frames = [];
+  for (let f = 0; f < 2; f++) {
+    const b = new Array(20).fill(0xFF);
+    for (let i = 0; i < 10; i++) {
+      const v = cells[f * 10 + i];
+      if (v === undefined) continue;
+      b[i * 2] = v >> 8; b[i * 2 + 1] = v & 0xFF;
+    }
+    frames.push(b);
+  }
+  return frames;
+}
+function simFaults(t) {
+  const b = new Array(7).fill(0);
+  if ((t % 45) === 44) b[5] = 1 << 2; // byte5 bit2 = TOTAL_UNDER_VOLTAGE (per protocol-map.json)
+  return b;
+}
+
+// ---- UI wiring ----
+const $ = id => document.getElementById(id);
+function hex(b) { return b.map(x => x.toString(16).padStart(2, '0')).join(' '); }
+function statusChip(s) {
+  const name = STATUS_NAMES[s] || 'Unknown';
+  const cls = (s === 3 || s === 4) ? 'chip-sleep' : s === 0 ? 'chip-move' : 'chip';
+  return `<span class="${cls}">${name}</span>`;
+}
+let state = 'idle'; // idle | connecting | streaming | error
+let tick = 0;
+let timer = null;
+
+function setDot(cls, label) {
+  $('dot').className = 'conn-dot ' + cls;
+  $('gattstate').innerHTML = `<span class="conn-dot ${cls}" id="dot"></span>${label}`;
+  $('gattstate').className = 'v ' + (cls === 'streaming' ? 'ok' : cls === 'error' ? 'bad' : cls === 'connecting' ? 'warn' : '');
+}
+function setSignal(rssi) {
+  const lvl = rssi >= -60 ? 4 : rssi >= -75 ? 3 : rssi >= -88 ? 2 : 1;
+  const q = rssi >= -60 ? 'excellent' : rssi >= -75 ? 'good' : rssi >= -88 ? 'fair' : 'weak';
+  const warnCls = lvl <= 2 ? ' lvl-warn' : '';
+  $('rssi').innerHTML = `<span class="sigbars lvl${lvl}${warnCls}" id="sigbars"><i></i><i></i><i></i><i></i></span>${rssi} dBm · ${q}`;
+  $('rssi').className = 'v ' + (lvl <= 2 ? 'warn' : 'ok');
+}
+async function connect() {
+  state = 'connecting';
+  $('connectbtn').disabled = true;
+  $('errbanner').classList.remove('show');
+  // Simulated GATT sequence with the real timeout budget (connect 10s, ops 5s)
+  setDot('connecting', 'scanning…');
+  await step(600); setDot('connecting', 'connecting (≤10 s)…');
+  await step(600); setDot('connecting', 'discover services…');
+  await step(500); setDot('connecting', 'handshake 17×0xFF…');
+  await step(500);
+  state = 'streaming';
+  setDot('streaming', 'streaming · 0x8900');
+  $('hs').textContent = 'ACK 0x00';
+  $('hs').className = 'v ok';
+  $('connectbtn').textContent = 'Disconnect';
+  $('connectbtn').disabled = false;
+  $('cadence').textContent = 'Streaming · frames refresh every 1 s · 0x8902/03/04, faults on flag.';
+  startStream();
+}
+function setGatt(_, label) { setDot('connecting', label); }
+function step(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function disconnect() {
+  state = 'idle';
+  clearInterval(timer); timer = null;
+  setDot('', 'idle');
+  $('hs').textContent = '—'; $('hs').className = 'v';
+  $('connectbtn').textContent = 'Connect to pack';
+  $('connectbtn').disabled = false;
+  $('cadence').textContent = 'Not streaming. Frames refresh every 1 s while connected.';
+}
+
+function dropLink() {
+  clearInterval(timer); timer = null;
+  state = 'error';
+  setDot('error', 'link lost');
+  $('errbanner').classList.add('show');
+  $('connectbtn').disabled = false;
+  $('connectbtn').textContent = 'Connect to pack';
+}
+
+$('connectbtn').addEventListener('click', () => {
+  if (state === 'streaming') disconnect();
+  else if (state !== 'connecting') connect();
+});
+$('retrybtn').addEventListener('click', connect);
+$('dropbtn').addEventListener('click', dropLink);
+
+function startStream() {
+  render(++tick);
+  timer = setInterval(() => render(++tick), 1000);
+}
+
+let cellIndex = 0;
+function render(t) {
+  const mainFrame = simMain(t);
+  const m = decodeMain(mainFrame);
+  $('voltage').textContent = m.voltage.toFixed(2);
+  const cur = $('current'); cur.textContent = m.current.toFixed(2);
+  cur.className = 'v' + (m.current < -0.2 ? ' warn' : '');
+  $('soc').textContent = m.soc;
+  $('socbar').style.width = m.soc + '%';
+  $('socbarwrap').classList.toggle('warn', m.soc < 25);
+  $('soh').textContent = m.soh;
+  $('speed').textContent = m.speed;
+  $('temp').textContent = m.temp;
+  $('tempmm').textContent = `${m.minTemp} / ${m.maxTemp}`;
+  $('status').innerHTML = statusChip(m.status);
+  $('cellcount').textContent = m.cellCount;
+  $('bms').textContent = `0x${m.bmsStatus.toString(16).padStart(2, '0')} (${m.bmsStatus})`;
+  const ff = $('faultflag');
+  ff.textContent = m.hasFault ? 'SET' : 'clear';
+  ff.className = 'v small ' + (m.hasFault ? 'bad' : 'ok');
+
+  const frames = simCells(t);
+  const cells = decodeCells(frames[0]).concat(decodeCells(frames[1]));
+  cellIndex = cells.length;
+  const min = Math.min(...cells), max = Math.max(...cells), span = Math.max(max - min, 1);
+  const minI = cells.indexOf(min) + 1, maxI = cells.indexOf(max) + 1;
+  $('cellsummary').innerHTML =
+    `voltage diff <b>${max - min} mV</b> · extreme <b>cell ${String(minI).padStart(2, '0')} ${min} mV</b> ↔ <b>cell ${String(maxI).padStart(2, '0')} ${max} mV</b>`;
+  $('cells').innerHTML = cells.map((v, i) => {
+    const cls = v === max && max - min > 15 ? 'hi' : v === min && max - min > 15 ? 'lo' : '';
+    const pct = Math.round(((v - min) / span) * 100);
+    return `<div class="cell"><span class="n">Cell ${String(i + 1).padStart(2, '0')}</span><br><span class="mv ${cls}">${v} mV</span><div class="cellbar"><i style="width:${pct}%"></i></div></div>`;
+  }).join('');
+
+  const faults = decodeFaults(simFaults(t));
+  $('faults').innerHTML = faults.length ? faults.map(f => `<span class="fault">${f}</span>`).join('') : '<span class="none">none</span>';
+
+  setSignal(-52 - (t % 7));
+
+  $('raw').innerHTML =
+    `<span class="addr">0x8902</span>    ${hex(mainFrame)}\n` +
+    `<span class="addr">0x8903</span>    ${hex(frames[0])}\n` +
+    `<span class="addr">0x8904</span>    ${hex(frames[1])}\n` +
+    `<span class="addr">0x8905/06</span> ${hex(simFaults(t))}`;
+}
+
+// ---- Control writes: confirm (power/sleep, like the app's alerts) + TX log ----
+const cmdlog = [];
+function logTx(cmd, op) {
+  const time = new Date().toLocaleTimeString([], { hour12: false });
+  cmdlog.unshift(`<span class="t">[${time}]</span> TX 0x8910 ${cmd.match(/../g).join(' ')} — ${op}`);
+  if (cmdlog.length > 8) cmdlog.pop();
+  $('cmdlog').innerHTML = cmdlog.join('\n');
+}
+const dlg = $('confirmdlg');
+let pending = null;
+document.querySelectorAll('#ctrls button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    pending = { cmd: btn.dataset.cmd, op: btn.dataset.op };
+    if (btn.dataset.confirm) {
+      $('confirmtitle').textContent = pending.op === 'Sleep' ? 'Put pack to sleep?' : `Confirm ${pending.op}?`;
+      $('confirmmsg').innerHTML = `Writes <code>${pending.cmd.match(/../g).join(' ')}</code> to characteristic <code>0x8910</code>.` +
+        (pending.op === 'Sleep' ? ' Sleep may drop the BLE link until the pack wakes.' : '');
+      dlg.showModal();
+    } else {
+      doWrite();
+    }
+  });
+});
+$('confirmcancel').addEventListener('click', () => { pending = null; dlg.close(); });
+$('confirmok').addEventListener('click', () => { dlg.close(); doWrite(); });
+function doWrite() {
+  if (!pending) return;
+  logTx(pending.cmd, pending.op);
+  $('lastwrite').textContent = `→ write 0x8910: ${pending.cmd.match(/../g).join(' ')}  (${pending.op})`;
+  pending = null;
+}
+</script>
+</body>
+</html>

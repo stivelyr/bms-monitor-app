@@ -1,0 +1,41 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.hinergi.bmsmonitor"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.hinergi.bmsmonitor"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    // Keep the dashboard single-sourced at the repo root: copy it into assets at build time.
+    sourceSets {
+        main {
+            assets.srcDirs = [new File(rootDir, "../app-assets-generated")]
+        }
+    }
+
+    tasks.register("copyDashboard", Copy) {
+        from new File(rootDir, "../app.html")
+        into new File(rootDir, "../app-assets-generated")
+    }
+    preBuild.dependsOn "copyDashboard"
+}
+
+tasks.register("copyApk", Copy) {
+    from "build/outputs/apk/debug/app-debug.apk"
+    into new File(rootDir, "../dist")
+    rename { "BMSMonitor-debug.apk" }
+}
